@@ -1,0 +1,119 @@
+import pandas as pd
+import numpy as np
+import csv
+import os
+import xlsxwriter
+from openpyxl import load_workbook
+
+
+pd.options.display.max_columns = None
+pd.options.display.max_rows = None
+
+class HwRoadmapExcel():
+
+	def pending_purchases(self):
+
+		tdf = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\txdotnow_tickets_twalton.csv', encoding='windows-1252', dtype=str)
+		ppl = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasreporttest.csv',encoding='windows-1252', dtype=str)
+		herc = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\herculesdata.csv')
+
+		tdf = tdf.loc[tdf['requested_by'].str.contains('TWALTON',na=False)]
+
+		tdf = tdf.loc[(tdf['state'] != 'Closed Complete') & (tdf['state'] != 'Cancelled') & (tdf['state'] != 'Closed Cancelled')]
+
+		# print(tdf)
+
+		tdf['ref_sc_task.u_peoplesoft_erq'] = tdf['ref_sc_task.u_peoplesoft_erq'].str.replace('\;|\,|\:','')
+		tdf['ref_sc_task.u_peoplesoft_erq'] = tdf['ref_sc_task.u_peoplesoft_erq'].str.replace(',',' ')
+		tdf['ref_sc_task.u_peoplesoft_erq'] = tdf['ref_sc_task.u_peoplesoft_erq'].str.replace(';',' ')
+		tdf['ref_sc_task.u_peoplesoft_erq'] = tdf['ref_sc_task.u_peoplesoft_erq'].str.replace(':',' ')
+
+		print(tdf)
+
+		s = tdf['ref_sc_task.u_peoplesoft_erq'].str.split(' ').apply(pd.Series,1).stack()
+		s.index = s.index.droplevel(-1)
+		s.name = "Requisition ID"
+		del tdf['ref_sc_task.u_peoplesoft_erq']
+		tdf1 = tdf.join(s)
+		tdf1['Requisition ID'] = tdf1['Requisition ID'].str.lstrip('0')
+
+		merge_df = pd.merge(tdf1, ppl, on=['Requisition ID'], how='left')
+
+		merge_df = merge_df.rename(columns={'number':'SCTASK','state':'State','assignment_group':'Assignment Group','assigned_to':'Assigned To'})
+
+		merge_df = merge_df[['SCTASK','Item Description','Requisition ID','RFQ Open Date','RFQ Dispatch Date','PO Number','State','Assignment Group','Assigned To','Total PO Amount','Total Amount Received']]
+
+		path = r'C:\Users\TWALTON\Desktop\hwroadmapxl.xlsx'
+
+		book = load_workbook(path)
+		std=book['Pending Purchases']
+		book.remove(std)
+		writer = pd.ExcelWriter(path, engine = 'openpyxl')
+		writer.book = book
+
+		merge_df.to_excel(writer,sheet_name='Pending Purchases', index=False)
+		writer.save()
+		writer.close()
+
+	def hercules_ship(self):
+
+		herc = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\herculesdata.csv')
+
+		herc['DATE SHIPPED'] = pd.to_datetime(herc['DATE SHIPPED'])
+
+		path = r'C:\Users\TWALTON\Desktop\hwroadmapxl.xlsx'
+
+		book = load_workbook(path)
+		std=book['Shipping Data']
+		book.remove(std)
+		writer = pd.ExcelWriter(path, engine = 'openpyxl')
+		writer.book = book
+
+		herc.to_excel(writer,sheet_name='Shipping Data', index=False)
+		writer.save()
+		writer.close()
+
+	def hercules_rec(self):
+
+		rec_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\hercules data\herculesreceivedata.csv', encoding='windows-1252', dtype=str)
+		class_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\pcclass.csv', encoding='windows-1252', dtype=str)
+		cmdb_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\HWASSETREPORTTEST.csv',encoding='windows-1252',dtype=str)
+
+		# self.shipdf['DATE SHIPPED'] = pd.to_datetime(self.shipdf['DATE SHIPPED'], format='%m/%d/%Y', errors='coerce')
+		# print(self.shipdf)
+
+		class_df.set_index('PC MODEL', inplace=True)
+		model_map = class_df['PC CLASS'].to_dict()
+
+		rec_df['PC Class'] = rec_df['MODEL'].map(model_map)
+
+		value = [['Engineer Laptop',3452.12],['Standard Laptop',1655.40],['2 in 1',2141.17],['Light Weight Laptop',1782.83],['Standard Desktop',794.74],['Engineer Desktop',3042.13],['Rugged Laptop',3129.05]]
+		value_df = pd.DataFrame(value, columns=['PC Class','Cost'])
+
+		rec_class = pd.merge(rec_df, value_df, how='left', left_on='PC Class', right_on='PC Class')
+
+		rec_merge = pd.merge(rec_class, cmdb_df, how='left', left_on='SERIAL NUMBER', right_on='Serial Number')
+
+		rec_merge = rec_merge[['ID','AIRBILL NUMBER','ASSET TAG NUMBER','SERIAL NUMBER','DATE RECEIVED','MAKE','MODEL','TICKET NUMBER','PC Class_x','Cost','warranty_expiration']]
+
+		rec_merge.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\herc_rec_for_roadmap.csv', encoding='windows-1252', index=False)
+		rec_merge['DATE RECEIVED'] = pd.to_datetime(rec_merge['DATE RECEIVED'])
+		rec_merge['warranty_expiration'] = pd.to_datetime(rec_merge['warranty_expiration'])
+
+		path = r'C:\Users\TWALTON\Desktop\hwroadmapxl.xlsx'
+
+		book = load_workbook(path)
+		std=book['Receiving Data']
+		book.remove(std)
+		writer = pd.ExcelWriter(path, engine = 'openpyxl')
+		writer.book = book
+
+		rec_merge.to_excel(writer,sheet_name='Receiving Data', index=False)
+		writer.save()
+		writer.close()
+
+
+hwmap = HwRoadmapExcel()
+hwmap.pending_purchases()
+hwmap.hercules_ship()
+hwmap.hercules_rec()
