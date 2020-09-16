@@ -1,0 +1,73 @@
+import pandas as pd
+import numpy as np
+import csv
+import os, sys, inspect
+
+pd.options.display.max_columns = None
+sw_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\softwarereport.csv', encoding='utf8', dtype=str)
+
+class SW_Data():
+
+	def program_count(self):
+
+		sw_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\softwarereport.csv', encoding='utf8', dtype=str)
+		hw_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\HWASSETREPORTTEST.csv',encoding='windows-1252',dtype=str)
+
+		sw_df = sw_df[['Application Name','Version','Publisher','Device Name','Serial Number','Asset Number']]
+
+		hw_df = hw_df.loc[hw_df['install_status'] == 'In use']
+
+		merge_df = sw_df.merge(hw_df, on='Serial Number')
+
+		merge_df = merge_df[['Application Name','Publisher','assigned_to.department','title','Serial Number']]
+
+		unique_df = merge_df.groupby(['Application Name','Publisher','assigned_to.department','Serial Number']).size().reset_index(name='Freq1')
+
+		unique_df1 = unique_df.groupby(['Application Name','Publisher','assigned_to.department']).size().reset_index(name='Freq')
+
+		unique_df.reset_index()
+
+		# unique_df['Freq'] = unique_df['Freq'].astype('str')
+
+		print(unique_df1)
+
+		pivot_df = unique_df1.pivot_table(values='Freq', index=['Application Name','Publisher'], columns='assigned_to.department')
+		pivot_df = pivot_df.reset_index().rename_axis(None, axis=1)
+
+		pivot_df.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Asset Management\\Software\\software_by_dd.csv', 
+				 encoding='utf8', index=False)
+
+		os.startfile(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Software\software_by_dd.csv', 'open')
+
+	def cmdb_sw(self):
+
+		sw_ent = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Software\cmdb_sw_entitlement.csv', encoding='windows-1252', dtype=str)
+		sw_type = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Software\cmdb_sw_license_type.csv', encoding='windows-1252', dtype=str)
+
+		cmdb_sw_merge = pd.merge(sw_ent, sw_type, on=['display_name'])
+
+		cmdb_sw_merge.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Asset Management\\Software\\cmdb_sw_final.csv', 
+		 encoding='windows-1252', index=False)
+
+		os.startfile(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Software\cmdb_sw_final.csv', 'open')
+
+		# print(cmdb_sw_merge)
+
+	def sw_count(self,x):
+
+		# print(x)
+
+		x1 = (x['Program Name'].str.split(expand=True).stack().value_counts().reset_index(name='Count'))
+		# print(x1)
+
+		x2 = (x['Program Name'].value_counts().reset_index(name='Count'))
+		print(x2)
+
+		x3 = (x['Publisher'].value_counts().reset_index(name='Count'))
+		# print(x3)
+
+
+sw = SW_Data()
+sw.program_count()
+# sw.cmdb_sw()
+# sw.sw_count(sw_df)
