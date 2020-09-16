@@ -1,0 +1,149 @@
+import pandas as pd
+import numpy as np
+import csv
+import tkinter as tk
+import matplotlib.pyplot as plt
+from matplotlib.dates import (YEARLY, MONTHLY, DateFormatter,
+								rrulewrapper, RRuleLocator, drange)
+from tkinter import ttk
+from tkinter import filedialog
+from tkinter import *
+from tkinter.ttk import *
+import os, sys, inspect
+import os.path
+import datetime
+import webbrowser as wb
+import datetime as dt
+from functools import reduce
+from datetime import datetime, timedelta, date
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import SessionNotCreatedException
+from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException
+from selenium.webdriver.chrome.options import Options
+import time
+import requests
+import urllib3
+import shutil
+import glob
+import re
+import unittest
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import ElementNotVisibleException
+
+req_list = ['Robinson Debra', 'Walton Timothy', 'Rhoads Jay', 'Garcia Karen', 'Jimerson Alexis','Birdwell Diana', 'Eckert Lauren',
+'Burford Angelia', 'Ruemke Melissa', 'Pope Dominique', 'Kemp Erika', 'Hernandez Fernando','Goodson Cynthia','James Oscar','Mendez Elda',
+'Parker Dawn','Burns Mary','Grundstrom Eric','Pastrano, Lisa','Jones, Raymond']
+
+pd.options.display.max_columns = None
+
+
+class Finance_Reports():
+
+	def  encumbrance_merge(self):
+
+		ticket_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\txdotnowticketstest.csv', encoding='windows-1252',dtype=str)
+
+		ppl_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasreporttest.csv', encoding='windows-1252',dtype=str)
+
+		encum_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY20\AY20_Encumbrance_Report_2020-05-05.csv',encoding='windows-1252', dtype=str)
+
+		encum_df = encum_df.rename(columns = {'PO ID':'PO Number'})
+
+		ticket_df = ticket_df.rename(columns = {'ref_sc_task.u_peoplesoft_erq':'Requisition ID'})
+		ticket_df = ticket_df.rename(columns = {'number':'SCTASK'})
+
+		ticket_df = ticket_df[['SCTASK','Requisition ID','short_description']]
+
+		req_split = ticket_df['Requisition ID'].str.split(' ')
+		clst = req_split.values.tolist()
+		lens = [len(l) for l in clst]
+
+		conc = pd.DataFrame({'Requisition ID': np.concatenate(clst)}, ticket_df.index.repeat(lens))
+		tnow_df = ticket_df.drop('Requisition ID', 1).join(conc).reset_index(drop=True)
+		tnow_df['Requisition ID'] = tnow_df['Requisition ID'].str.replace('\;|\,|\&|\-','')
+
+		tnow_df['Requisition ID'] = tnow_df['Requisition ID'].str.lstrip('0')
+		tnow_df['Requisition ID'] = tnow_df['Requisition ID'].str.replace('6014400000','')
+		tnow_df['Requisition ID'] = tnow_df['Requisition ID'].str.replace('cancelled','')
+		tnow_df['Requisition ID'] = tnow_df['Requisition ID'].str.replace(' ','')
+		tnow_df = tnow_df.loc[tnow_df['Requisition ID'] != '']
+
+		df1 = tnow_df.drop_duplicates(subset=['SCTASK', 'Requisition ID'])
+
+		df1 = df1.loc[df1['short_description'].str.contains('CNTR')]
+
+		df1.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Finance\\TXDOTNow Reports\\TXDOTNow_renewal_tickets.csv', 
+				 encoding='windows-1252', index=False)
+
+		df3 = pd.merge(df1, ppl_df, on='Requisition ID',how='left')
+
+		df3 = df3[['SCTASK','short_description','Requisition ID','PO Number']]
+
+		df3 = df3.drop_duplicates(subset=['SCTASK','Requisition ID','PO Number'])
+
+		print(df3)
+
+		print(encum_df)
+
+		encum_merge = pd.merge(encum_df,df3, on='PO Number',how='left')
+
+		# print(encum_merge)
+
+		# df3.to_csv(r'C:\\Users\\TWALTON\\Desktop\\python hw data\\Finance\\TXDOTNow Reports\\TXDOTNow_pplsoft_renewal_merge.csv', encoding='windows-1252', index=False)
+
+		# print(df3)
+
+	def r25_report(self):
+
+		df = pd.read_excel('R25_5-5-20.xlsx')
+		conditions = [
+		    (df['PO lookup'] > 1),
+		    (df['SA lookup'] > 1),
+		    (df['Vendor Number'] == 1042437166),
+		    (df['Vendor Number'] == 1042432614),
+		    (df['Vendor Number'] == 1750764921),
+		    ((df['Vendor Number'] == 1743016098) | (df['Vendor Number'] == 1833201987)),
+		    (df['Vendor Number'] == 1135266470),
+		    (df['Vendor Number'] == 1133790433),
+		    (df['Vendor Number'] == 1411426973),
+		    (df['LBB Account'] == 'B2007'),
+		    (df['LBB Account'] == 'B2005'),
+		    (df['Appropriation'] == 53150),
+		    (df['Appropriation'] == 51801),
+		    (df['Appropriation'] == 59801),
+		    (df['Account'] == 7002),
+		    (df['Account'] == 7006),
+		    (df['Account'] == 7017),
+		    (df['Account'] == 7021),
+		    (df['Account'] == 7022),
+		    (df['Account'] == 7023),
+		    (df['Account'] == 7033),
+		    (df['Account'] == 7040),
+		    (df['Account'] == 7042),
+		    (df['Account'] == 7050),
+		    (df['Account'] == 7806),
+		    (df['Account'] == 7300),
+		    (df['Account'] == 7201),
+		    (df['Account'] == 7526),
+		    (df['Account'] == 7286),
+		    ((df['Vendor Number'] == 1461523300) & (df['Appropriation'] == 13019)),
+		    ((df['Account'] == 7504) | (df['Account'] == 7516) | (df['Account'] == 7961) | (df['Account'] == 7962)),
+		    ((df['Account'] == 7203) | (df['Account'] == 7210) | (df['Account'] == 7211) | (df['Account'] == 7243)),
+		    ((df['Vendor Number'] == 1742339797) & ((df['Account'] == 7377) | (df['Account']  == 7378)))]
+
+		choices = ['PO','Staff Aug', 'NTT', 'Project Falcon', 'Falcon Legal', 'Cable', 'Procard', 'TWC', 'WestPub', 'MPS', 'Travel', 'DCS', 'PC', 'CPA-ERP LIC', '7002', '7006', '7017', '7021', '7022', '7023', '7033', '7040', '7042', '7050', 'Interest', 'Consumable', 'Membership Dues', 'Shredding', 'Courier', 'Trimble', 'Telecom', 'Training', 'HW']
+		df['Cost Center'] = np.select(conditions, choices, default='null')
+		df.to_excel("R25_Cost_Center.xlsx")
+
+
+
+fin = Finance_Reports()
+fin.encumbrance_merge()
