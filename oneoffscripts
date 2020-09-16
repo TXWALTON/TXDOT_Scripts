@@ -1,0 +1,62 @@
+import pandas as pd
+import numpy as np
+import csv
+import tkinter as tk
+import matplotlib.pyplot as plt
+from matplotlib.dates import (YEARLY, MONTHLY, DateFormatter,
+								rrulewrapper, RRuleLocator, drange)
+from tkinter import ttk
+from tkinter import filedialog
+from tkinter import *
+from tkinter.ttk import *
+import os, sys, inspect
+import os.path
+import datetime
+import webbrowser as wb
+import datetime as dt
+from functools import reduce
+from datetime import datetime, timedelta, date
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import SessionNotCreatedException
+from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException
+from selenium.webdriver.chrome.options import Options
+import time
+import requests
+import urllib3
+import shutil
+import glob
+import re
+import unittest
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import ElementNotVisibleException
+
+pd.options.display.max_columns = None
+
+
+class One_Off_Scripts():
+
+	def tnow_ppl_compare(self):
+
+		tnow_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Hardware\alm_asset_report.csv', encoding='windows-1252',dtype=str)
+		tnow_df.rename(columns={'asset_tag': 'Asset ID'}, inplace=True)
+
+		ppl_df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Hardware\itd_asset_inventory_pplsoft.csv', encoding='windows-1252',dtype=str)
+
+		asset_merge = pd.merge(ppl_df,tnow_df, on='Asset ID',how='left')
+
+		asset_merge.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Hardware\txdotnow_pplsoft_asset_merge.csv')
+
+		print(ppl_df)
+		print(asset_merge)
+
+
+one_off = One_Off_Scripts()
+one_off.tnow_ppl_compare()
