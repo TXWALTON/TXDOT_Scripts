@@ -1,0 +1,880 @@
+import pandas as pd
+import numpy as np
+import csv
+import tkinter as tk
+import matplotlib.pyplot as plt
+from matplotlib.dates import (YEARLY, MONTHLY, DateFormatter,
+								rrulewrapper, RRuleLocator, drange)
+import matplotlib.ticker as ticker
+from tkinter import ttk
+from tkinter import filedialog
+from tkinter import *
+from tkinter.ttk import *
+import os, sys, inspect
+import os.path
+import datetime
+from datetime import date, timedelta
+import webbrowser as wb
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import SessionNotCreatedException
+from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException
+from selenium.webdriver.chrome.options import Options
+import time
+import requests
+import urllib3
+import shutil
+import glob
+import re
+import unittest
+
+pd.options.display.max_columns = None
+pd.options.display.max_rows = None
+
+p2p_all = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\P2PALLTEST.csv',encoding = 'windows-1252', low_memory=False, dtype=str)
+print(p2p_all.head())
+
+entry_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasentrytest.csv',encoding = 'windows-1252', dtype=str)
+
+pending_po = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\txdotnowticketstest.csv', encoding='windows-1252', dtype=str)
+pending_po = pending_po.rename(columns = {'number':'Ticket Number'})
+
+itd_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasreporttest.csv',encoding='windows-1252', dtype=str)
+
+encum_report = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\encumbrance_report.csv',encoding='windows-1252', dtype=str)
+
+cmdb_sw = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Software\cmdb_sw_final.csv',encoding='windows-1252', dtype=str)
+
+sw_ppl = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Asset Management\Software\sw_procurement_get_po.csv',encoding='windows-1252', dtype=str)
+
+mr_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\mr_entry.csv',encoding = 'windows-1252', dtype=str)
+
+class Peoplesoft_Data():
+
+	def ddo_chartfields(self, p2p):
+
+		chartfields = p2p.groupby(['Comp. Object PO','Accounting Year PO','DDO PO','Department ID PO','Fund Code PO','Class Field PO','Project CostinG Business Unit PO','Project ID PO','PC Activity ID PO',
+						'PC Resource Type PO']).size().reset_index().rename(columns={0:'Count'})
+
+		chartfields.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\ddo_chartfields.csv', encoding='windows-1252', index=False)
+
+	def atlas_entry(self, entry, c):
+
+		req_split = entry[c].str.split(' ')
+		clst = req_split.values.tolist()
+		lens = [len(l) for l in clst]
+
+		conc = pd.DataFrame({c: np.concatenate(clst)}, entry.index.repeat(lens))
+		entry_final = entry.drop(c, 1).join(conc).reset_index(drop=True)
+		entry_final['Requisition ID'] = entry_final['Requisition ID'].str.replace('\;|\,','')
+
+		entry_final.to_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasentry.csv', encoding='windows-1252', index=False)
+
+	def ppl_setup(self):
+
+		p2p_url = 'https://fin.txdot.gov/psp/psfinpd/EMPLOYEE/ERP/c/MANAGE_PURCHASE_ORDERS.TX_RUN_TXCPO001.GBL?Folder=MYFAVORITES'
+		encum_url = 'https://fin.txdot.gov/psp/psfinpd/EMPLOYEE/ERP/c/X_PO_TXDOT_MENU.X_PO_KKBAL_RPT_CMP.GBL?Folder=MYFAVORITES'
+
+		args = ['hide_console', ]
+		driver_options = webdriver.ChromeOptions()
+		driver_options.add_experimental_option('detach',True)
+		driver_options.add_argument('--log-level=3')
+
+		self.ppl_driver = webdriver.Chrome(executable_path='C:\\Users\\Public\\chromedriver.exe', service_args=args, options=driver_options)
+		self.ppl_driver.get(encum_url)
+
+	def ppl_login(self, username, password):
+		
+		self.ppl_driver.switch_to.default_content()
+		# WebDriverWait(self.tx_driver, 10).until(EC.presence_of_element_located((By.ID, 'userid')))
+		enter_user = self.ppl_driver.find_element_by_id('userid')
+		enter_user.send_keys(username)
+		
+		time.sleep(1)
+		
+		enter_password = self.ppl_driver.find_element_by_id('pwd')
+		enter_password.send_keys(password)
+		
+		self.ppl_driver.find_element_by_css_selector('#login > div > div.ps_signinentry > div:nth-child(8) > input').click()
+
+	def merge_df(self, x, y, p):
+
+		x_split = x.stack()
+		x_split = x_split.str.split(' ', expand=True)
+		x_split = x_split.stack()
+		x_split = x_split.unstack(-2)
+		x_split = x_split.reset_index(-1, drop=True).reset_index()
+		x_final = x_split.drop_duplicates(subset=['Ticket Number', 'Requisition ID'])
+		x_final['Requisition ID'] = x_final['Requisition ID'].str.lstrip('0')
+		x_final = x_final.drop('index', 1)
+
+		df3 = pd.merge(x_final, y, on=['Ticket Number'])
+
+		self.df4 = pd.merge(p, df3, on=['Requisition ID'])
+
+		self.df4 = self.df4[['assignment_group','Ticket Number', 'Requisition ID', 'PO Number', 'PO Date', 'PO Amount', 'PO Status']]
+
+		self.df4 = self.df4.drop_duplicates(subset=['PO Number', 'Ticket Number'])
+
+		self.df4['PO Amount'] = self.df4['PO Amount'].str.replace(' ','')
+
+		self.df4['PO Amount'] = self.df4['PO Amount'].str.replace(',','')
+
+		self.df4['PO Amount'] = self.df4['PO Amount'].astype(float)
+
+		self.df4 = self.df4.loc[self.df4['PO Status'] == 'Dispatched']
+
+		self.df4 = self.df4[self.df4['PO Date'].notnull()]
+
+		self.df4 = self.df4[(self.df4['PO Amount'] != 0.00)]
+
+		self.df4['PO Date'] = pd.to_datetime(self.df4['PO Date'])
+
+		mask = self.df4['PO Date'] >= (pd.to_datetime('today') - datetime.timedelta(days=20))
+
+		self.df4 = self.df4.loc[mask]
+
+		self.df4.to_csv('T:\\IMD Sourcing\\Atlas App\\Data\\atlasporeport.csv', 
+						 encoding='windows-1252', index=False)
+
+	def po_print(self):
+
+		# self.df4['PO Number'] = self.df4['PO Number'].astype(str).str.zfill(10)
+
+		# changed self.number and self.df4 for number and swpo
+
+		for self.number in self.df4['PO Number']:
+
+			try:
+				
+				self.ppl_setup()
+				self.ppl_login('TWALTON', 'Cowboy_34')
+
+				time.sleep(1)
+
+				self.ppl_driver.switch_to.default_content()
+				WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+				time.sleep(1)
+
+				WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="ICTAB_1"]'))).click()
+
+				time.sleep(2)
+
+				self.ppl_driver.find_element_by_css_selector('#RUN_CNTL_PUR_RUN_CNTL_ID').send_keys('PO_{}'.format(self.number))
+				WebDriverWait(self.ppl_driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="#ICSearch"]')))
+				self.ppl_driver.find_element_by_xpath('//*[@id="#ICSearch"]').click()
+
+				time.sleep(3)    
+
+				try:
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+					WebDriverWait(self.ppl_driver, 5).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="#ICSave"]')))
+					WebDriverWait(self.ppl_driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@id="RUN_CNTL_PUR_BUSINESS_UNIT"]')))
+
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_BUSINESS_UNIT"]').clear()
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_TO_BU"]').clear()
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_BUSINESS_UNIT"]').send_keys('60144')
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_TO_BU"]').send_keys('60144')
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_PO_ID"]').clear()
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_PO_ID"]').send_keys(self.number)
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="PRCSRQSTDLG_WRK_LOADPRCSRQSTDLGPB"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_LOADPRCSRQSTDLGPB"]').click()
+
+					time.sleep(3)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptModFrame_0"]')))
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="#ICSave"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="#ICSave"]').click()
+
+					time.sleep(3)
+
+					WebDriverWait(self.ppl_driver, 30).until(EC.presence_of_element_located((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+					count = 1
+					instance = (int(self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_DESCR100"]').text.strip('Process Instance:')) + count)
+					print(instance)
+
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="PRCSRQSTDLG_WRK_LOADRPTLIST"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_LOADRPTLIST"]').click()
+
+					time.sleep(3)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="ICTAB_2"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="ICTAB_2"]').click()
+
+					time.sleep(12)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 30).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+
+					timeout = time.time() + 120
+
+					while time.time() < timeout:
+
+						try:
+							descr = self.ppl_driver.find_element_by_id('CONTENT_LINK$0').text
+							status = self.ppl_driver.find_element_by_id('CDM_LIST_VW_DISTSTATUS$0').text
+							print(descr)
+
+							if descr == 'PO_DISPATCH - PO_DISPATCH.pdf':
+							  print(descr + ' passed try and if')
+							  break
+
+							else:
+								self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+								time.sleep(5)
+								continue
+
+						except(NoSuchElementException):
+							self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+							time.sleep(5)
+
+					else:
+						self.ppl_driver.quit()
+						continue
+
+					print('successful description break')
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+					time.sleep(3)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+					timeout = time.time() + 120
+
+					while time.time() < timeout:
+
+						try:
+
+							if (instance == int(self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text) and status == 'Posted' and descr == 'PO_DISPATCH - PO_DISPATCH.pdf'):
+								WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+								self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+								time.sleep(3)
+								print(self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text)
+								break
+
+							else: 
+								WebDriverWait(self.ppl_driver, 30).until(EC.presence_of_element_located((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+								self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+								print(self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text)
+								time.sleep(3)
+								continue
+
+						except(NoSuchElementException, StaleElementReferenceException):
+
+							self.ppl_driver.switch_to.default_content()
+							WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+							WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+							self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+							time.sleep(3)
+							continue
+
+					else:
+						self.ppl_driver.quit()
+						continue
+
+					self.i = self.ppl_driver.find_element_by_id('CDM_LIST_VW_CONTENTID$0').text
+
+					time.sleep(1)
+
+					self.download_pdf('TWALTON', 'Cowboy_34')
+
+					time.sleep(20)
+
+					self.ppl_driver.quit()
+
+				except(NoSuchElementException, WebDriverException):
+
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="SEARCH_RESULT1"]'))).click()
+
+					time.sleep(3)
+				
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+					WebDriverWait(self.ppl_driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@id="RUN_CNTL_PUR_BUSINESS_UNIT"]')))
+
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_BUSINESS_UNIT"]').clear()
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_TO_BU"]').clear()
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_BUSINESS_UNIT"]').send_keys('60144')
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_TO_BU"]').send_keys('60144')
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_PO_ID"]').clear()
+					self.ppl_driver.find_element_by_xpath('//*[@id="RUN_CNTL_PUR_PO_ID"]').send_keys(self.number)
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="PRCSRQSTDLG_WRK_LOADPRCSRQSTDLGPB"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_LOADPRCSRQSTDLGPB"]').click()
+
+					time.sleep(3)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptModFrame_0"]')))
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="#ICSave"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="#ICSave"]').click()
+
+					time.sleep(3)
+
+					WebDriverWait(self.ppl_driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+					count = 1
+					instance = (int(self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_DESCR100"]').text.strip('Process Instance:')) + count)
+					print(instance)
+
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="PRCSRQSTDLG_WRK_LOADRPTLIST"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_LOADRPTLIST"]').click()
+
+					time.sleep(3)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="ICTAB_2"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="ICTAB_2"]').click()
+
+					time.sleep(12)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 30).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))     
+
+					timeout = time.time() + 120
+
+					while time.time() < timeout:
+
+						try:
+							descr = self.ppl_driver.find_element_by_id('CONTENT_LINK$0').text
+							status = self.ppl_driver.find_element_by_id('CDM_LIST_VW_DISTSTATUS$0').text
+							print(descr)
+
+							if descr == 'PO_DISPATCH - PO_DISPATCH.pdf':
+							  print(descr + 'passed try and if')
+							  break
+
+							else:
+								self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+								time.sleep(5)
+								continue
+
+						except(NoSuchElementException):
+							self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+							time.sleep(5)
+							continue
+
+					else:
+						self.ppl_driver.quit()
+						continue
+
+					print('successful description break')
+					WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+					self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+					time.sleep(3)
+
+					self.ppl_driver.switch_to.default_content()
+					WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+					timeout = time.time() + 120
+
+					while time.time() < timeout:
+
+						try:
+
+							if (instance == int(self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text) and status == 'Posted' and descr == 'PO_DISPATCH - PO_DISPATCH.pdf'):
+								WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+								self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+								time.sleep(3)
+								print(self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text)
+								break
+
+							else: 
+								WebDriverWait(self.ppl_driver, 30).until(EC.presence_of_element_located((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+								self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+								print(self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text)
+								time.sleep(3)
+								continue
+
+						except(NoSuchElementException, StaleElementReferenceException):
+
+							self.ppl_driver.switch_to.default_content()
+							WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+							WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+							self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+							time.sleep(3)
+							continue
+
+					else:
+						continue
+
+					self.i = self.ppl_driver.find_element_by_id('CDM_LIST_VW_CONTENTID$0').text
+
+					time.sleep(1)
+
+					self.download_pdf('TWALTON', 'Cowboy_34')
+
+					time.sleep(30)
+
+					self.tx_driver.quit()
+
+			except (SessionNotCreatedException):
+				print('Session Not Created Exception Error')
+				continue
+
+	def download_pdf(self, username, password):
+
+		url = 'https://fin.txdot.gov/psreports/psfinpd/{}/xpo007r_{}.csv'.format(self.r,self.i)
+		
+		urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+		MAX_RETRIES = 20
+		session = requests.Session()
+		adapter = requests.adapters.HTTPAdapter(max_retries=MAX_RETRIES)
+		session.mount('https://', adapter)
+		session.mount('http://', adapter)
+		session.max_redirects = 1000
+		
+		r = session.get(url, auth=(username, password), verify=False, stream=True, headers={'Accept-Encoding': 'identity'})
+		r.raw.decode_content = True
+		
+		with open(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\AY19_Encumbrance_Report_{}.csv'.format(datetime.date.today().strftime('%Y-%m-%d')), 'wb') as f:
+			shutil.copyfileobj(r.raw, f)
+
+	def po_auto(self):
+		self.p2p_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\P2PALLTEST.csv',  thousands=',', encoding='windows-1252', dtype=str)
+		self.p2p_df['Requisition ID'] = self.p2p_df['Requisition ID'].str.lstrip('0')
+
+		self.merge_df(entry_df, pending_po, self.p2p_df)
+		self.po_print()
+
+	def sw_po(self,itd,cmdb):
+
+		pd.options.display.max_rows = None
+
+		# print(itd.head())
+
+		nigp = ['208','920']
+
+		sw_df = itd.loc[itd['Item ID'].str.startswith(tuple(nigp))]
+
+		sw_df['PO Number'].replace(' ', np.nan, inplace=True)
+		sw_po = sw_df.dropna(axis=0, subset=['PO Number'])
+
+		sw_po['Voucher ID'].replace(' ', np.nan, inplace=True)
+		sw_po = sw_po.dropna(axis=0, subset=['Voucher ID'])
+
+		# sw_po = sw_po.loc[sw_po['Receipt Status'] != 'Canceled']
+
+		sw_po = sw_po.sort_values('Receipt Date').drop_duplicates(subset=['Item ID','PO Number','PO Line'], keep='last')
+		sw_po['PO Number'] = sw_po['PO Number'].str.lstrip('0')
+
+		# sw_po = sw_po.drop_duplicates(subset=['Item ID','PO Number','PO Line'], keep='first')
+
+		print(sw_po.head())
+
+		sw_po_final = sw_po[['Ticket Number','Item ID','Requisition Name','Item Description','PO Date','PO Number','PO Vendor Name','PO Line','PO Quantity','PO Amount','Receipt Date','Receipt Quantity']]
+
+		sw_po_final.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Asset Management\\Software\\sw_procurements.csv', 
+		 encoding='windows-1252', index=False)
+
+		cmdb['po_number'] = cmdb['po_number'].str.split('-').str[0]
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'Retired ','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'Reitred ','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'Retierd ','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'Retire ','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'Rretired ','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'60144','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'60134','')
+		cmdb['po_number'] = cmdb['po_number'].str.replace(r'6144','')
+		cmdb['po_number'] = cmdb['po_number'].str.lstrip('0')
+		cmdb['purchased_rights'] = cmdb['purchased_rights'].str.replace(',','')
+
+		cmdb = cmdb.drop_duplicates(subset=['display_name', 'po_number'])
+		cmdb = cmdb.rename(columns={'po_number':'PO Number'})
+		cmdb['purchased_rights'] = pd.to_numeric(cmdb['purchased_rights'])
+
+		cmdb = cmdb.groupby(['PO Number','display_name','model.manufacturer','install_status'], as_index=False)['purchased_rights'].sum()
+		cmdb = cmdb[['PO Number','display_name','purchased_rights','model.manufacturer','install_status']]
+		cmdb = cmdb.reset_index(drop=True)
+
+		# print(cmdb)
+
+		sw_merge = pd.merge(sw_po_final, cmdb,on=['PO Number'], how='left')
+
+		print(sw_merge)
+
+		cmdb.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Asset Management\\Software\\txdotnow_entitlements.csv', 
+				 encoding='windows-1252', index=False)
+
+		sw_merge.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Asset Management\\Software\\ppl_txnow_merge.csv', 
+				 encoding='windows-1252', index=False)
+
+	def encumbrance_report(self):
+
+		# procure to pay csv file to pandas dataframe
+
+		p2p = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasreporttest.csv',encoding='windows-1252', dtype=str)
+
+		# drop rows with no value in PO Number column
+
+		p2p = p2p.dropna(subset=['PO Number'])
+
+		# remove leading zeros
+
+		p2p['PO Number'] = p2p['PO Number'].str.lstrip('0')
+
+		# condense dataframe to four columns
+
+		p2p = p2p[['Ticket Number','PO Number','Invoice ID','Service End Date']]
+
+		# encumbrance report csv file to dataframe with a format tool that takes today's date and inserts it into the file name
+
+		encum = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\AY19_Encumbrance_Report_{}.csv'.format(datetime.date.today().strftime('%Y-%m-%d')),encoding='windows-1252', dtype=str)
+
+		# drop rows with no value in Encumbrannce Balance column
+
+		encum = encum.dropna(subset=['Encumbrance Balance'])
+
+		# condense dataframe to remove zero value encumbrances
+
+		encum = encum.loc[encum['Encumbrance Balance'] != '0']
+
+		# condense dataframe to these specific columns
+
+		encum = encum[['PO ID','PO Line','Class Field','Account','PO Distrib Line','Sched Line','Vendor Name','Receipt ID','Receipt Date','Voucher ID','Encumbrance Balance']]
+
+		# Rename column
+
+		encum = encum.rename(columns={'PO ID':'PO Number'})
+
+		# change Encumbrance Balance column to numeric values
+
+		encum['Encumbrance Balance'] = pd.to_numeric(encum['Encumbrance Balance'], errors='coerce')
+
+		# list of columns to parse through
+
+		cols_to_check = ['PO Number','PO Line','Class Field','Account','PO Distrib Line','Sched Line','Vendor Name','Receipt ID','Receipt Date','Voucher ID']
+
+		# parsing through columns to remove characters
+
+		encum[cols_to_check] = encum[cols_to_check].replace({'=':'','"':''}, regex=True)
+
+		encum['PO Number'] = encum['PO Number'].str.lstrip('0')
+
+		encum_merge = pd.merge(encum, p2p, on='PO Number', how='left')
+
+		encum_merge = encum_merge.sort_values('Receipt Date').drop_duplicates(subset=['PO Number','PO Line','PO Distrib Line','Sched Line'] ,keep='last')
+
+		encum_merge = encum_merge[['Ticket Number','PO Number','Class Field','Account','Vendor Name','Receipt ID','Receipt Date','Voucher ID','Invoice ID','Service End Date','Encumbrance Balance']]
+
+		encum_merge['Report Date'] = datetime.date.today().strftime('%Y-%m-%d')
+
+		encum_pivot = encum_merge.pivot_table(values=['Encumbrance Balance'], index=['Report Date'], columns=['Class Field'],aggfunc='sum')
+
+		encum_pivot.columns = encum_pivot.columns.droplevel(0)
+
+		encum_pivot = encum_pivot.reset_index().rename_axis(None, axis=1)
+
+		encum_merge.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\AY19_Encumbrance_Report_{}.csv'.format(datetime.date.today().strftime('%Y-%m-%d')), 
+				 encoding='windows-1252', index=False)
+
+		encum_pivot.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\Appropriation Pivot\AY19_Appropriation_Pivot_{}.csv'.format(datetime.date.today().strftime('%Y-%m-%d')), 
+				 encoding='windows-1252', index=False)
+
+	def encumbrance_approp(self):
+
+		file = r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\Appropriation Pivot'
+
+		pivot_csv = glob.glob(file + '/*.csv')
+		frame = pd.DataFrame
+		df_list = []
+
+		for f in pivot_csv:
+
+			df = pd.read_csv(f, index_col=None, encoding='windows-1252', dtype=str)
+			df_list.append(df)
+
+		frame = pd.concat(df_list, sort=False)
+
+		frame.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\AY19_All_Appropriation_Pivot.csv', index=False)
+
+	def encumbrance_plot(self):
+		
+		df = pd.read_csv(r'C:\Users\TWALTON\Desktop\python hw data\Finance\Encumbrance Reports\AY19\AY19_All_Appropriation_Pivot.csv', index_col=None, encoding='windows-1252', dtype=str)
+
+		df['13019'] = pd.to_numeric(df['13019'], errors='coerce')
+		df['13032'] = pd.to_numeric(df['13032'], errors='coerce')
+		df['13801'] = pd.to_numeric(df['13801'], errors='coerce')
+		df['13802'] = pd.to_numeric(df['13802'], errors='coerce')
+		df['52801'] = pd.to_numeric(df['52801'], errors='coerce')
+		df['53020'] = pd.to_numeric(df['53020'], errors='coerce')
+		df['53801'] = pd.to_numeric(df['53801'], errors='coerce')
+		df['54801'] = pd.to_numeric(df['54801'], errors='coerce')
+		df['55019'] = pd.to_numeric(df['55019'], errors='coerce')
+		df['55800'] = pd.to_numeric(df['55800'], errors='coerce')
+		df['58801'] = pd.to_numeric(df['58801'], errors='coerce')
+
+		plt.subplot(4,3,1)
+		plt.plot(df['Report Date'], df['13019'])
+		plt.title('13019')
+
+		plt.subplot(4,3,2)
+		plt.plot(df['Report Date'], df['13032'])
+		plt.title('13032')
+
+		plt.subplot(4,3,3)
+		plt.plot(df['Report Date'], df['13801'])
+		plt.title('13801')
+
+		plt.subplot(4,3,4)
+		plt.plot(df['Report Date'], df['13802'])
+		plt.title('13802')
+
+		plt.subplot(4,3,5)
+		plt.plot(df['Report Date'], df['52801'])
+		plt.title('52801')
+
+		plt.subplot(4,3,6)
+		plt.plot(df['Report Date'], df['53020'])
+		plt.title('53020')
+
+		plt.subplot(4,3,7)
+		plt.plot(df['Report Date'], df['53801'])
+		plt.title('53801')
+
+		plt.subplot(4,3,8)
+		plt.plot(df['Report Date'], df['54801'])
+		plt.title('54801')
+
+		plt.subplot(4,3,9)
+		plt.plot(df['Report Date'], df['55019'])
+		plt.title('55019')
+
+		plt.subplot(4,3,10)
+		plt.plot(df['Report Date'], df['55800'])
+		plt.title('55800')
+
+		plt.subplot(4,3,11)
+		plt.plot(df['Report Date'], df['58801'])
+		plt.title('58801')
+
+		plt.show()
+
+	def encumbrance_auto(self):
+
+		self.ppl_setup()
+		self.ppl_login('TWALTON','Cowboy_34')
+
+		# try:
+
+		time.sleep(1)
+
+		self.ppl_driver.switch_to.default_content()
+		WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+		time.sleep(1)
+
+		# WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="ICTAB_1"]'))).click()
+
+		# time.sleep(2)
+
+		self.ppl_driver.find_element_by_css_selector('#X_PO_KKBL_RNCTL_RUN_CNTL_ID').send_keys('AY19')
+		WebDriverWait(self.ppl_driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="#ICSearch"]')))
+		self.ppl_driver.find_element_by_xpath('//*[@id="#ICSearch"]').click()
+
+		time.sleep(3)
+
+		self.ppl_driver.switch_to.default_content()
+		WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+		WebDriverWait(self.ppl_driver, 5).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="PRCSRQSTDLG_WRK_LOADPRCSRQSTDLGPB"]')))
+
+		self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_LOADPRCSRQSTDLGPB"]').click()
+
+		time.sleep(3)
+
+		self.ppl_driver.switch_to.default_content()
+		WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptModFrame_0"]')))
+		WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="#ICSave"]')))
+		self.ppl_driver.find_element_by_xpath('//*[@id="#ICSave"]').click()
+
+		time.sleep(3)
+
+		WebDriverWait(self.ppl_driver, 30).until(EC.presence_of_element_located((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+		self.ppl_driver.switch_to.default_content()
+		WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+		# count = 1
+		# instance = (int(self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_DESCR100"]').text.strip('Process Instance:')) + count)
+		# print(instance)
+
+		WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="PRCSRQSTDLG_WRK_LOADRPTLIST"]')))
+		self.ppl_driver.find_element_by_xpath('//*[@id="PRCSRQSTDLG_WRK_LOADRPTLIST"]').click()
+
+		time.sleep(3)
+
+		self.ppl_driver.switch_to.default_content()
+		WebDriverWait(self.ppl_driver, 10).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+
+		WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="ICTAB_2"]')))
+		self.ppl_driver.find_element_by_xpath('//*[@id="ICTAB_2"]').click()
+
+		time.sleep(5)
+
+		self.ppl_driver.switch_to.default_content()
+		WebDriverWait(self.ppl_driver, 30).until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, '//*[@id="ptifrmtgtframe"]')))
+		WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+		self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+
+		timeout = time.time() + 180
+
+		while time.time() < timeout:
+
+			try:
+				descr = self.ppl_driver.find_element_by_id('CONTENT_LINK$0').text
+				status = self.ppl_driver.find_element_by_id('CDM_LIST_VW_DISTSTATUS$0').text
+				print(descr)
+
+				if descr == 'PO Encumbrance Report' and status == 'Posted':
+				  print(descr + ' passed try and if')
+				  break
+
+				else:
+					self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+					time.sleep(5)
+					continue
+
+			except(NoSuchElementException):
+				self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+				time.sleep(5)
+
+		else:
+			self.ppl_driver.quit()
+			print('timeout')
+
+		print('successful description break')
+		WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+		self.ppl_driver.find_element_by_xpath('//*[@id="CDM_WRK_REFRESH_BTN"]').click()
+		time.sleep(5)
+		WebDriverWait(self.ppl_driver, 30).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="CDM_WRK_REFRESH_BTN"]')))
+		time.sleep(1)
+
+		self.r = self.ppl_driver.find_element_by_id('CDM_LIST_VW_CONTENTID$0').text
+		self.i = self.ppl_driver.find_element_by_id('CDM_LIST_VW_PRCSINSTANCE$0').text
+
+		print(self.r)
+		print(self.i)
+
+		time.sleep(1)
+
+		self.download_pdf('TWALTON', 'Cowboy_34')
+
+		time.sleep(20)
+
+		self.ppl_driver.quit()
+
+
+		# except(NoSuchElementException, WebDriverException):
+		# 	print('Exception Error')
+		# 	self.ppl_driver.quit()
+
+
+
+	def po_report(self,x,y):
+
+		x['ref_sc_task.u_peoplesoft_po_number'] = x['ref_sc_task.u_peoplesoft_po_number'].str.replace('\;|\,\:','')
+		x['ref_sc_task.u_peoplesoft_po_number'] = x['ref_sc_task.u_peoplesoft_po_number'].str.replace(',',' ')
+		x['ref_sc_task.u_peoplesoft_po_number'] = x['ref_sc_task.u_peoplesoft_po_number'].str.replace(';',' ')
+		x['ref_sc_task.u_peoplesoft_po_number'] = x['ref_sc_task.u_peoplesoft_po_number'].str.replace(':',' ')
+
+		x.rename(columns={'number':'Ticket Number'})
+
+		s = x['ref_sc_task.u_peoplesoft_po_number'].str.split(' ').apply(pd.Series,1).stack()
+		s.index = s.index.droplevel(-1)
+		s.name = "TPO Number"
+		del x['ref_sc_task.u_peoplesoft_po_number']
+		x2 = x.join(s)
+		x2['TPO Number'] = x2['TPO Number'].str.replace(' ','')
+		x2['TPO Number'] = x2['TPO Number'].str.replace('60144','')
+		x2['TPO Number'] = x2['TPO Number'].str.lstrip('0')
+
+		# print(x2)
+
+		y = y[['Ticket Number', 'Requisition ID', 'PO Number', 'PO Date', 'PO Amount', 'PO Status']]
+
+		y = y.drop_duplicates(subset=['PO Number', 'Ticket Number'])
+
+		y['PO Number'] = y['PO Number'].str.lstrip('0')
+
+		y['PO Amount'] = y['PO Amount'].str.replace(' ','')
+
+		y['PO Amount'] = y['PO Amount'].str.replace(',','')
+
+		y['PO Amount'] = y['PO Amount'].astype(float)
+
+		y = y.loc[y['PO Status'] == 'Dispatched']
+
+		y = y[y['PO Date'].notnull()]
+
+		y = y[(y['PO Amount'] != 0.00)]
+
+		y['PO Date'] = pd.to_datetime(y['PO Date'])
+
+		mask = y['PO Date'] >= (pd.to_datetime('today') - datetime.timedelta(days=365))
+
+		y = y.loc[mask]
+
+		df = pd.merge(x2, y, on=['Ticket Number'])
+
+		df = df[['Ticket Number','assignment_group','state','TPO Number','PO Number','PO Date']]
+
+		df1 = df.loc[df['TPO Number'] != df['PO Number']]
+		df2 = df1.loc[df1['state'] != 'Closed Complete']
+		df3 = df2.loc[df2['state'] != 'Closed Cancelled']
+
+		print(df3)
+
+		df3.to_csv('C:\\Users\\TWALTON\\Desktop\\python hw data\\Asset Management\\po_issued_report.csv', encoding='windows-1252', index=False)
+
+	def nigp_codes(self):
+
+		itd_df = pd.read_csv(r'T:\IMD Sourcing\Atlas App\Data\atlasreporttest.csv',encoding='windows-1252', dtype=str)
+		itd_df['PO Date'] = pd.to_datetime(itd_df['PO Date'])
+
+		itd_df = itd_df.loc[itd_df['PO Date'].dt.year == 2018]
+
+		print(itd_df.head())
+
+		items = itd_df.groupby(['Item ID','Item Description']).size().reset_index().rename(columns={0:'Count'})
+
+		items.to_csv(r'C:\Users\TWALTON\Desktop\python hw data\nigp_codes.csv', encoding='windows-1252', index=False)
+
+
+
+ppl = Peoplesoft_Data()
+# ppl.ddo_chartfields(p2p_all)
+# ppl.atlas_entry(entry_df, 'Requisition ID')
+# ppl.po_auto()
+# ppl.sw_po(itd_df, cmdb_sw)
+
+ppl.encumbrance_auto()
+ppl.encumbrance_report()
+ppl.encumbrance_approp()
+# ppl.encumbrance_plot()
+
+# ppl.po_report(pending_po,itd_df)
+
+# ppl.nigp_codes()
